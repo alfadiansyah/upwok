@@ -1,28 +1,37 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { In, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from '../entities/user.entity';
-import { Student } from '../entities/student.entity';
-import { StudentSchedule } from '../entities/student-schedule.entity';
-import { TeacherTeamMemberSchedule } from '../entities/teacher-team-member-schedule.entity';
+import * as bcrypt from 'bcrypt';
+
+// DTO and Entities
 import { RegistrationDto } from '../dto/registration.dto';
+import { User, Student, Program, Group, Level, Grade, Location, TeacherTeamMemberSchedule, StudentSchedule } from '../entities';
+
+// Import the PlacementTestService
+import { PlacementTestService } from './placement-test.service';
 
 @Injectable()
 export class RegistrationService {
     constructor(
         @InjectRepository(User) private readonly userRepo: Repository<User>,
         @InjectRepository(Student) private readonly studentRepo: Repository<Student>,
+        @InjectRepository(Program) private readonly programRepo: Repository<Program>,
+        @InjectRepository(Group) private readonly groupRepo: Repository<Group>,
+        @InjectRepository(Level) private readonly levelRepo: Repository<Level>,
+        @InjectRepository(Grade) private readonly gradeRepo: Repository<Grade>,
+        @InjectRepository(Location) private readonly locationRepo: Repository<Location>,
         @InjectRepository(StudentSchedule) private readonly studentScheduleRepo: Repository<StudentSchedule>,
         @InjectRepository(TeacherTeamMemberSchedule) private readonly ttmsRepo: Repository<TeacherTeamMemberSchedule>,
+        private readonly placementTestService: PlacementTestService,
     ) { }
 
     private async hashDefaultPassword(): Promise<string> {
-        // Ganti ini sesuai strategy hashing kamu
-        return 'defaultpasswordhash';
+        const salt = await bcrypt.genSalt();
+        return bcrypt.hash('default-temporary-password', salt);
     }
 
     async registerStudent(dto: RegistrationDto) {
-        // 1. Cek atau buat user
+        // Cek atau buat user baru (logika ini sama untuk kedua alur)
         let user = await this.userRepo.findOne({ where: { phoneNumber: dto.phoneNumber } });
         if (!user) {
             user = this.userRepo.create({
@@ -34,37 +43,80 @@ export class RegistrationService {
             await this.userRepo.save(user);
         }
 
-        // 2. Buat student baru
-        const student = this.studentRepo.create({
-            name: dto.studentName,
-            user,
-        });
+        // Buat data siswa baru
+        const student = this.studentRepo.create({ name: dto.studentName, user });
         await this.studentRepo.save(student);
 
-        // 3. Simpan jadwal les dengan cek lokasi
-        for (const sched of dto.schedules) {
-            const teacherSchedule = await this.ttmsRepo.findOne({
-                where: { id: sched.teacherScheduleId, location: { id: dto.locationId } },
-                relations: ['location'],
-            });
+        // =====================================================================
+        // ALUR 1: Jika siswa mendaftar karena sudah tahu level (ada 'schedules')
+        // =====================================================================
+        if (dto.schedules && dto.schedules.length > 0) {
+            // Validasi data yang diperlukan untuk alur ini
+            console.log('--- MEMULAI PROSES PENJADWALAN ---');
+            console.log('Jadwal yang diterima dari DTO:', dto.schedules); // LOG 1
 
-            if (!teacherSchedule) {
-                throw new BadRequestException(`Schedule ID ${sched.teacherScheduleId} not found at location ${dto.locationId}`);
+            if (!dto.programId || !dto.groupId || !dto.levelId || !dto.gradeId || !dto.locationId) {
+                throw new BadRequestException('Program, Group, Level, Grade, and Location are required for direct schedule registration.');
             }
 
-            if (teacherSchedule.isFull) {
-                throw new BadRequestException(`Schedule ID ${sched.teacherScheduleId} is full`);
+            // Validasi berantai dari Program hingga Grade
+            const grade = await this.gradeRepo.findOne({
+                where: {
+                    id: dto.gradeId,
+                    level: { id: dto.levelId, group: { id: dto.groupId, program: { id: dto.programId } } }
+                }
+            });
+            if (!grade) {
+                throw new NotFoundException(`Combination of Program/Group/Level/Grade is invalid.`);
             }
 
-            const studentSchedule = this.studentScheduleRepo.create({
-                student,
-                teacherSchedule,
-                isActive: true,
+            // Validasi jadwal guru
+            const scheduleIds = dto.schedules.map(s => s.teacherScheduleId);
+            console.log('ID Jadwal yang akan dicari:', scheduleIds); // LOG 2
+            const teacherSchedules = await this.ttmsRepo.find({
+                where: { id: In(scheduleIds), location: { id: dto.locationId } }
             });
-            await this.studentScheduleRepo.save(studentSchedule);
+
+            if (teacherSchedules.length !== scheduleIds.length) {
+                console.error('VALIDASI GAGAL: Jumlah jadwal yang ditemukan tidak cocok dengan yang diminta.');
+
+                throw new BadRequestException('One or more teacher schedules were not found at the specified location.');
+            }
+
+            // Cek apakah ada jadwal yang sudah penuh
+            teacherSchedules.forEach(ts => {
+                if (ts.isFull) {
+                    throw new BadRequestException(`Schedule ID ${ts.id} is already full.`);
+                }
+            });
+
+            // Simpan jadwal siswa
+            const studentSchedules = teacherSchedules.map(ts => {
+                return this.studentScheduleRepo.create({
+                    student,
+                    teacherSchedule: ts,
+                    isActive: true,
+                });
+            });
+            console.log('Data yang akan disimpan ke student_schedules:', studentSchedules); // LOG 4
+
+            await this.studentScheduleRepo.save(studentSchedules);
+            console.log('--- PROSES PENJADWALAN SELESAI ---');
+
+        }
+        // =====================================================================
+        // ALUR 2: Jika siswa mendaftar setelah placement test
+        // =====================================================================
+        else if (dto.testSessionId) {
+            await this.placementTestService.saveGuestResultToDatabase(dto.testSessionId, student.id);
+        }
+        // =====================================================================
+        // Jika tidak ada data yang cocok
+        // =====================================================================
+        else {
+            throw new BadRequestException('Registration data is incomplete. Please provide either schedule information or a test session ID.');
         }
 
-        return { message: 'Registration successful', studentId: student.id };
+        return { message: 'Registration successful! Please activate your account.', studentId: student.id };
     }
-
 }

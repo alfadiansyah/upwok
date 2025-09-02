@@ -2,8 +2,9 @@ import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColum
 import { Program } from './program.entity';
 import { Level } from './level.entity';
 import { PlacementTest } from './placement-test.entity';
-import { Test } from './test.entity';
+import { TestQuestion } from './test-question.entity';
 import { Student } from './student.entity';
+import { Test } from './test.entity';
 
 @Entity('groups')
 export class Group {
@@ -26,11 +27,14 @@ export class Group {
   @OneToMany(() => Level, (level) => level.group)
   levels: Level[];
 
-  @OneToMany(() => PlacementTest, (pt) => pt.group)
-  placementTests: PlacementTest[];
+  // @OneToMany(() => PlacementTest, (pt) => pt.group)
+  // placementTests: PlacementTest[];
+
+   // 👇 Ganti baris ini
+//   @OneToMany(() => TestQuestion, (question) => question.group)
+//   testQuestions: TestQuestion[]; // Nama properti juga diganti agar lebih jelas
 
   @OneToMany(() => Test, (test) => test.group)
   tests: Test[];
-
 
 }

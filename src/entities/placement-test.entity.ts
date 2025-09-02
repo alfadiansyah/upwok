@@ -1,12 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
-import { Group } from './group.entity';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, CreateDateColumn, UpdateDateColumn, JoinColumn } from 'typeorm';
 import { Student } from './student.entity';
-import { PlacementTestAnswer } from './placement-test-answer.entity';
 import { PlacementTestResult } from './placement-test-result.entity';
+import { Test } from './test.entity';
 
 export enum PlacementTestStatus {
-  PENDING = 'pending',
-  REVIEWED = 'reviewed',
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
 }
 
 @Entity('placement_tests')
@@ -14,33 +13,26 @@ export class PlacementTest {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'test_name', length: 128 })
-  testName: string;
-
-  @Column({ type: 'text', nullable: true })
-  description: string | null;
-
-  @Column({ name: 'is_active', default: true })
-  isActive: boolean;
-
-  @Column({ type: 'enum', enum: PlacementTestStatus, default: PlacementTestStatus.PENDING })
-  status: PlacementTestStatus;
-
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  @ManyToOne(() => Group, (group) => group.placementTests, { onDelete: 'CASCADE' })
-  group: Group;
+  @Column({ type: 'enum', enum: PlacementTestStatus, default: PlacementTestStatus.IN_PROGRESS })
+  status: PlacementTestStatus;
 
+  // Relasi ke siswa yang mengerjakan
   @ManyToOne(() => Student, (student) => student.placementTests, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'student_id' })
   student: Student;
 
-  @OneToMany(() => PlacementTestAnswer, (ans) => ans.placementTest)
-  answers: PlacementTestAnswer[];
+  // Relasi ke tes yang dikerjakan
+  @ManyToOne(() => Test, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'test_id' })
+  test: Test;
 
-  @OneToMany(() => PlacementTestResult, (res) => res.placementTest)
+  // Relasi ke hasil tes
+  @OneToMany(() => PlacementTestResult, (result) => result.placementTest)
   results: PlacementTestResult[];
 }

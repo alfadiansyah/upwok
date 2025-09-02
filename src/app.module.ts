@@ -8,9 +8,24 @@ import { GradeModule } from './modules/grade.module';
 import { LocationModule } from './modules/location.module';
 import { TeacherScheduleModule } from './modules/teacher-schedule.module';
 import { RegistrationModule } from './modules/registration.module';
+import { PlacementTestModule } from './modules/placement-test.module';
+import { AuthModule } from './modules/auth.module';
+// import { CacheModule } from '@nestjs/cache-manager';
+import { redisStore } from 'cache-manager-redis-store';
+import { CacheModule } from '@nestjs/cache-manager';
+import { ProfileModule } from './modules/profile.module';
 
 @Module({
   imports: [
+    CacheModule.registerAsync({
+      isGlobal: true,
+      useFactory: async () => ({
+        store: redisStore,
+        host: 'localhost',
+        port: 6379,
+        ttl: 300,
+      }),
+    }),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: 'localhost',
@@ -22,7 +37,8 @@ import { RegistrationModule } from './modules/registration.module';
       logging: true,
       entities: Object.values(Entities),
     }),
-    ProgramModule, GroupModule, LevelModule, GradeModule, LocationModule, TeacherScheduleModule, RegistrationModule,
+    ProgramModule, GroupModule, LevelModule, GradeModule, LocationModule, TeacherScheduleModule, RegistrationModule, PlacementTestModule, AuthModule, ProfileModule, Entities.PlacementTestAnswer
+
   ],
 })
 export class AppModule { }
