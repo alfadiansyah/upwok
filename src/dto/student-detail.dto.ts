@@ -1,4 +1,3 @@
-// DTO untuk menampilkan jadwal simpel
 class SimpleScheduleDto {
     dayOfWeek: string;
     startTime: string;
@@ -7,7 +6,6 @@ class SimpleScheduleDto {
     teacherName: string;
 }
 
-// DTO untuk menampilkan hasil tes simpel
 class SimpleTestResultDto {
     testName: string;
     score: number;
@@ -15,10 +13,13 @@ class SimpleTestResultDto {
     determinedLevel?: string;
 }
 
-// DTO utama untuk detail setiap siswa
 export class StudentDetailDto {
     id: number;
     name: string;
+    programName?: string;
+    groupName?: string;
+    levelName?: string;
+    gradeNumber?: number;
     schedules: SimpleScheduleDto[];
     testResults: SimpleTestResultDto[];
 }

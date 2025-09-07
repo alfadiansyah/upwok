@@ -15,6 +15,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   // This method is called after the token is successfully verified
   async validate(payload: any) {
     // The value returned here will be attached to the request object as `req.user`
-    return { userId: payload.sub, phoneNumber: payload.phoneNumber };
+    return {
+      userId: payload.sub,
+      phoneNumber: payload.phoneNumber,
+      role: payload.role // <-- Tambahkan role
+    };
   }
 }

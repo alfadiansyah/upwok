@@ -110,7 +110,11 @@ export class AuthService {
         }
 
         // 4. Generate and return a JWT
-        const payload = { sub: user.id, phoneNumber: user.phoneNumber };
+        const payload = {
+            sub: user.id,
+            phoneNumber: user.phoneNumber,
+            role: user.role // <-- TAMBAHKAN INI
+        };
         return {
             accessToken: this.jwtService.sign(payload),
         };
@@ -126,10 +130,10 @@ export class AuthService {
 
         // Kasus 2: User terdaftar tapi belum menyelesaikan login pertama
         if (!user.firstLoginCompleted) {
-            return { status: 'activation_required' }; // Perlu aktivasi (kirim OTP)
+            return { status: 'activation_required' };
         }
 
         // Kasus 3: User sudah terdaftar dan aktif
-        return { status: 'safe_to_login' }; // Lanjut ke halaman login password
+        return { status: 'safe_to_login' };
     }
 }

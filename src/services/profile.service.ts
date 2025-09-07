@@ -15,36 +15,46 @@ export class ProfileService {
         private readonly studentRepo: Repository<Student>,
     ) { }
 
-    async getUserProfile(userId: number): Promise<UserProfileDto> {
-        const user = await this.userRepo.findOne({
-            where: { id: userId },
-            relations: [
-                'students',
-                'students.schedules',
-                'students.schedules.teacherSchedule',
-                'students.schedules.teacherSchedule.location',
-                'students.schedules.teacherSchedule.teacherTeamMember', // Cukup sampai di sini
-                // 'students.schedules.teacherSchedule.teacherTeamMember.teacher', // <-- Hapus atau komentari baris ini
-                'students.results',
-                'students.results.placementTest',
-                'students.results.placementTest.test',
-                'students.results.determinedLevel',
-            ],
-        });
+    /**
+     * Helper function untuk mengubah data entitas Student menjadi DTO yang bersih.
+     */
+    private mapStudentToDto(student: Student): StudentDetailDto {
+        let programName: string | undefined = 'Not determined';
+        let groupName: string | undefined = 'Not determined';
+        let levelName: string | undefined = 'Not determined';
+        let gradeNumber: number | undefined = undefined;
 
-        if (!user) {
-            throw new NotFoundException(`User with ID ${userId} not found.`);
+        // Sumber 1: Prioritaskan data dari jadwal jika ada (untuk pendaftar langsung)
+        const gradeFromSchedule = student.schedules?.[0]?.teacherSchedule?.teacherTeamMember?.teacher?.gradeTeachers?.[0]?.grade;
+        if (gradeFromSchedule) {
+            programName = gradeFromSchedule.level?.group?.program?.name;
+            groupName = gradeFromSchedule.level?.group?.name;
+            levelName = gradeFromSchedule.level?.name;
+            gradeNumber = gradeFromSchedule.gradeNumber;
+        } 
+        // Sumber 2: Jika tidak ada jadwal, ambil dari placement test yang dikerjakan
+        else {
+            const testTaken = student.placementTests?.[0]?.test;
+            if (testTaken) {
+                programName = testTaken.group?.program?.name;
+                groupName = testTaken.group?.name;
+            }
+            // Level tetap diambil dari hasil review admin (jika sudah ada)
+            levelName = student.results?.[0]?.determinedLevel?.name || 'Not determined';
         }
 
-        const studentDetails: StudentDetailDto[] = user.students.map(student => ({
+        return {
             id: student.id,
             name: student.name,
+            programName,
+            groupName,
+            levelName,
+            gradeNumber,
             schedules: student.schedules.map(schedule => ({
                 dayOfWeek: schedule.teacherSchedule?.dayOfWeek || 'N/A',
                 startTime: schedule.teacherSchedule?.startTime || 'N/A',
                 endTime: schedule.teacherSchedule?.endTime || 'N/A',
                 locationName: schedule.teacherSchedule?.location?.name || 'N/A',
-                // 👇 UBAH KEMBALI KE SINI: Ambil nama langsung dari 'memberName'
                 teacherName: schedule.teacherSchedule?.teacherTeamMember?.memberName || 'Not Assigned',
             })),
             testResults: student.results.map(result => ({
@@ -53,7 +63,38 @@ export class ProfileService {
                 status: result.status,
                 determinedLevel: result.determinedLevel?.name,
             })),
-        }));
+        };
+    }
+
+    /**
+     * Helper function untuk mendefinisikan semua relasi yang perlu di-load.
+     */
+    private getFullStudentRelations(): string[] {
+        return [
+            // Relasi untuk alur pendaftaran via jadwal
+            'schedules',
+            'schedules.teacherSchedule.location',
+            'schedules.teacherSchedule.teacherTeamMember',
+            'schedules.teacherSchedule.teacherTeamMember.teacher.gradeTeachers.grade.level.group.program',
+            
+            // Relasi untuk alur pendaftaran via placement test
+            'placementTests',
+            'placementTests.test.group.program', // <-- Jalur penting
+            'results',
+            'results.placementTest.test',
+            'results.determinedLevel',
+        ];
+    }
+
+    async getUserProfile(userId: number): Promise<UserProfileDto> {
+        const user = await this.userRepo.findOne({
+            where: { id: userId },
+            relations: ['students', ...this.getFullStudentRelations().map(rel => `students.${rel}`)],
+        });
+
+        if (!user) { throw new NotFoundException(`User with ID ${userId} not found.`); }
+        
+        const studentDetails = user.students.map(student => this.mapStudentToDto(student));
 
         return {
             id: user.id,
@@ -61,45 +102,16 @@ export class ProfileService {
             instagram: user.usernameInstagram,
             students: studentDetails,
         };
-    } async getStudentProfile(userId: number, studentId: number): Promise<StudentDetailDto> {
+    }
+
+    async getStudentProfile(userId: number, studentId: number): Promise<StudentDetailDto> {
         const student = await this.studentRepo.findOne({
-            // Kueri ini memastikan siswa dengan ID 'studentId'
-            // ADALAH MILIK user dengan ID 'userId'
             where: { id: studentId, user: { id: userId } },
-            relations: [
-                'schedules',
-                'schedules.teacherSchedule',
-                'schedules.teacherSchedule.location',
-                'schedules.teacherSchedule.teacherTeamMember',
-                'schedules.teacherSchedule.teacherTeamMember.teacher',
-                'results',
-                'results.placementTest',
-                'results.placementTest.test',
-                'results.determinedLevel',
-            ],
+            relations: this.getFullStudentRelations(),
         });
 
-        if (!student) {
-            throw new NotFoundException(`Student with ID ${studentId} not found or does not belong to this user.`);
-        }
-
-        // Memetakan data ke DTO, sama seperti sebelumnya
-        return {
-            id: student.id,
-            name: student.name,
-            schedules: student.schedules.map(schedule => ({
-                dayOfWeek: schedule.teacherSchedule?.dayOfWeek || 'N/A',
-                startTime: schedule.teacherSchedule?.startTime || 'N/A',
-                endTime: schedule.teacherSchedule?.endTime || 'N/A',
-                locationName: schedule.teacherSchedule?.location?.name || 'N/A',
-                teacherName: schedule.teacherSchedule?.teacherTeamMember?.teacher?.name || 'Not Assigned',
-            })),
-            testResults: student.results.map(result => ({
-                testName: result.placementTest?.test?.name || 'Placement Test',
-                score: result.score,
-                status: result.status,
-                determinedLevel: result.determinedLevel?.name,
-            })),
-        };
+        if (!student) { throw new NotFoundException(`Student with ID ${studentId} not found.`); }
+        
+        return this.mapStudentToDto(student);
     }
 }

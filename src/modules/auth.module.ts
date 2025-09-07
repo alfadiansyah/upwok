@@ -13,6 +13,10 @@ import { RegistrationModule } from './registration.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from 'src/auth/jwt.strategy';
+import { AdminController } from 'src/controllers/admin.controller';
+import { AdminGuard } from 'src/guards/admin.guard';
+import { AdminService } from 'src/services/admin.service';
+import { Student } from 'src/entities';
 
 @Module({
     imports: [
@@ -21,13 +25,15 @@ import { JwtStrategy } from 'src/auth/jwt.strategy';
         // Konfigurasi cache untuk OTP
         forwardRef(() => RegistrationModule),
 
-        TypeOrmModule.forFeature([User]),
+        TypeOrmModule.forFeature([User, Student]),
         JwtModule.register({
             secret: 'YOUR_VERY_SECRET_KEY', // IMPORTANT: Move this to a .env file
             signOptions: { expiresIn: '1d' }, // Token expires in 1 day
         }),
     ],
-    controllers: [AuthController],
-    providers: [AuthService, WhatsappService, JwtStrategy],
+    controllers: [AuthController, AdminController],
+    // 👇 3. Tambahkan AdminGuard ke array providers
+    providers: [AuthService, WhatsappService, JwtStrategy, AdminGuard, AdminService,
+    ],
 })
 export class AuthModule { }
